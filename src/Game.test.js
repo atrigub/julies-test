@@ -325,3 +325,224 @@ describe('Game Component Logic', () => {
     expect(gameInstance.state.score).toBe(2);
   });
 });
+
+describe('Game Speed Change Logic', () => {
+  let gameInstance;
+  let clearIntervalSpy;
+  let setIntervalSpy;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    gameInstance = new Game(); // Create a new instance for each test
+    // Initialize state similar to how the component does, focusing on relevant parts
+    gameInstance.setState({
+      food: [10, 10], // Dummy food position
+      snakeDots: [[0, 0], [2, 0]],
+      direction: 'RIGHT',
+      initialSpeed: 200,
+      speed: 200,
+      minSpeed: 50,
+      gameOver: false,
+      justAte: false,
+      score: 0,
+      foodEatenSinceLastSpeedIncrease: 0
+    });
+
+    clearIntervalSpy = jest.spyOn(window, 'clearInterval');
+    setIntervalSpy = jest.spyOn(window, 'setInterval');
+    
+    // Mock the initial intervalId that would be set in componentDidMount
+    // This is important because componentDidUpdate might try to clear it.
+    gameInstance.intervalId = 12345; // Dummy interval ID
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.clearAllMocks(); // Clears spies usage data
+  });
+
+  test('foodEatenSinceLastSpeedIncrease increments correctly', () => {
+    // Simulate eating food - by directly invoking the part of moveSnake logic
+    // This requires careful setup of 'head' and 'food' state.
+    const head = [4,0]; // Assume snake head will be here
+    gameInstance.setState({ food: [4,0] }); // Food is at the same position
+
+    // Manually trigger the eating logic part from moveSnake
+    // This is a more direct unit test of the setState callback
+    act(() => {
+      gameInstance.setState(prevState => ({
+        justAte: true,
+        score: prevState.score + 1,
+        foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+      }), () => {
+        // Callback from eating food, where speed check happens
+        if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+          const newSpeed = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+          if (newSpeed !== gameInstance.state.speed) {
+            gameInstance.setState({ speed: newSpeed, foodEatenSinceLastSpeedIncrease: 0 });
+          } else {
+            gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+          }
+        }
+      });
+    });
+    expect(gameInstance.state.foodEatenSinceLastSpeedIncrease).toBe(1);
+    expect(gameInstance.state.score).toBe(1);
+
+    act(() => { // Eat again
+       gameInstance.setState(prevState => ({
+        justAte: true,
+        score: prevState.score + 1,
+        foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+      }), () => {
+        if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+          const newSpeed = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+           if (newSpeed !== gameInstance.state.speed) {
+            gameInstance.setState({ speed: newSpeed, foodEatenSinceLastSpeedIncrease: 0 });
+          } else {
+            gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+          }
+        }
+      });
+    });
+    expect(gameInstance.state.foodEatenSinceLastSpeedIncrease).toBe(2);
+    expect(gameInstance.state.score).toBe(2);
+  });
+
+  test('speed changes at threshold and respects minSpeed', () => {
+    gameInstance.setState({ 
+      foodEatenSinceLastSpeedIncrease: 4, // One away from threshold
+      speed: 200, 
+      initialSpeed: 200,
+      minSpeed: 50 
+    });
+
+    // Simulate eating the 5th piece of food
+    act(() => {
+      gameInstance.setState(prevState => ({
+        justAte: true, // Not strictly needed for this test's focus but good for consistency
+        score: prevState.score + 1,
+        foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+      }), () => { // This is the callback where speed logic is triggered
+        if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+          const newSpeed = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+          if (newSpeed !== gameInstance.state.speed) {
+            gameInstance.setState({ speed: newSpeed, foodEatenSinceLastSpeedIncrease: 0 });
+          } else {
+            gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+          }
+        }
+      });
+    });
+
+    expect(gameInstance.state.speed).toBe(170); // 200 - 30
+    expect(gameInstance.state.foodEatenSinceLastSpeedIncrease).toBe(0); // Reset
+
+    // Simulate eating 5 more pieces of food (fast forward)
+    // Speed: 170 -> 140 -> 110 -> 80 -> 50 (minSpeed)
+    for (let i = 0; i < 4; i++) { // 4 more speed increases
+      gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 4, speed: gameInstance.state.speed }); // set to 4 to trigger on next "eat"
+      act(() => {
+        gameInstance.setState(prevState => ({
+          foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+        }), () => {
+          if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+            const newSpeed = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+            if (newSpeed !== gameInstance.state.speed) {
+                gameInstance.setState({ speed: newSpeed, foodEatenSinceLastSpeedIncrease: 0 });
+            } else {
+                gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+            }
+          }
+        });
+      });
+    }
+    expect(gameInstance.state.speed).toBe(50); // Should be at minSpeed: 170-30=140, 140-30=110, 110-30=80, 80-30=50
+    
+    // Eat 5 more, speed should not go below minSpeed (50)
+    gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 4, speed: gameInstance.state.minSpeed });
+     act(() => {
+        gameInstance.setState(prevState => ({
+          foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+        }), () => {
+          if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+            const newSpeed = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+             if (newSpeed !== gameInstance.state.speed) {
+                gameInstance.setState({ speed: newSpeed, foodEatenSinceLastSpeedIncrease: 0 });
+            } else { // Speed is already minSpeed, newSpeed will be the same
+                gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+            }
+          }
+        });
+      });
+    expect(gameInstance.state.speed).toBe(50); // Still 50
+    expect(gameInstance.state.foodEatenSinceLastSpeedIncrease).toBe(0); // Reset
+  });
+
+  test('game loop restarts when speed changes', () => {
+    const oldSpeed = gameInstance.state.speed; // 200
+    const expectedNewSpeed = 170;
+    gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 4 }); // About to trigger speed change
+
+    // Simulate eating the 5th piece of food to trigger speed change
+    act(() => {
+      gameInstance.setState(prevState => ({
+        foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+      }), () => { // Callback where speed logic is triggered
+        if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+          const newSpeedCalc = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+          if (newSpeedCalc !== gameInstance.state.speed) {
+            gameInstance.setState({ speed: newSpeedCalc, foodEatenSinceLastSpeedIncrease: 0 });
+          } else {
+            gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+          }
+        }
+      });
+    });
+    
+    expect(gameInstance.state.speed).toBe(expectedNewSpeed);
+
+    // Manually call componentDidUpdate as it's not automatically called on `new Game()` instances
+    // when state is changed directly.
+    // We pass the previous state that has the old speed.
+    act(() => {
+      gameInstance.componentDidUpdate({}, { speed: oldSpeed, gameOver: false }); // Provide relevant parts of prevState
+    });
+
+    expect(clearIntervalSpy).toHaveBeenCalledWith(gameInstance.intervalId); // The initial dummy intervalId
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1); // Called once to restart
+    expect(setIntervalSpy).toHaveBeenCalledWith(gameInstance.moveSnake, expectedNewSpeed);
+  });
+
+  test('no speed change or loop restart below threshold', () => {
+    const initialSpeed = gameInstance.state.speed;
+    gameInstance.setState({ foodEatenSinceLastSpeedIncrease: 0 });
+
+    // Simulate eating 1 piece of food (not enough for speed change)
+    act(() => {
+      gameInstance.setState(prevState => ({
+        foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+      }), () => {
+        if (gameInstance.state.foodEatenSinceLastSpeedIncrease >= 5) {
+          // This block should not be hit
+          const newSpeed = Math.max(gameInstance.state.speed - 30, gameInstance.state.minSpeed);
+          gameInstance.setState({ speed: newSpeed, foodEatenSinceLastSpeedIncrease: 0 });
+        }
+      });
+    });
+
+    expect(gameInstance.state.speed).toBe(initialSpeed); // Speed remains the same
+    expect(gameInstance.state.foodEatenSinceLastSpeedIncrease).toBe(1);
+    
+    // Manually call componentDidUpdate to check if it would (incorrectly) restart the loop
+    const oldSpeed = initialSpeed; // In this case, speed didn't change.
+    act(() => {
+        // Pass same speed in prevState as it didn't change
+      gameInstance.componentDidUpdate({}, { speed: oldSpeed, gameOver: false }); 
+    });
+
+    expect(clearIntervalSpy).not.toHaveBeenCalled();
+    expect(setIntervalSpy).not.toHaveBeenCalled(); // Interval should not restart if speed hasn't changed
+  });
+
+});

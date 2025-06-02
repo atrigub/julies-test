@@ -20,15 +20,25 @@ class Game extends Component {
       [2, 0] 
     ],
     direction: 'RIGHT',
-    speed: 200, // ms
+    initialSpeed: 200,
+    speed: 200, // Current speed, initialized with initialSpeed
+    minSpeed: 50,
     gameOver: false,
     justAte: false, // To handle snake growth
-    score: 0 // Add score to state
+    score: 0,
+    foodEatenSinceLastSpeedIncrease: 0
   }
 
   componentDidMount() {
     this.intervalId = setInterval(this.moveSnake, this.state.speed);
     document.onkeydown = this.onKeyDown;
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (prevState.speed !== this.state.speed && !this.state.gameOver) {
+      clearInterval(this.intervalId);
+      this.intervalId = setInterval(this.moveSnake, this.state.speed);
+    }
   }
 
   componentWillUnmount() {
@@ -68,8 +78,27 @@ class Game extends Component {
     if (head[0] === this.state.food[0] && head[1] === this.state.food[1]) {
       this.setState(prevState => ({
         justAte: true,
-        score: prevState.score + 1 // Increment score
-      }));
+        score: prevState.score + 1,
+        foodEatenSinceLastSpeedIncrease: prevState.foodEatenSinceLastSpeedIncrease + 1
+      }), () => {
+        // Callback after state is updated
+        if (this.state.foodEatenSinceLastSpeedIncrease >= 5) {
+          const newSpeed = Math.max(this.state.speed - 30, this.state.minSpeed);
+          if (newSpeed !== this.state.speed) {
+            this.setState({
+              speed: newSpeed,
+              foodEatenSinceLastSpeedIncrease: 0
+            });
+            // Game loop restart will be handled in the next subtask
+          } else { 
+            // Speed didn't change (already at minSpeed), but threshold was met.
+            // So, just reset the counter.
+            this.setState({
+              foodEatenSinceLastSpeedIncrease: 0
+            });
+          }
+        }
+      });
       this.repositionFood();
     } else {
       if (this.state.justAte) {
